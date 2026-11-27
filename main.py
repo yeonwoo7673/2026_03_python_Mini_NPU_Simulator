@@ -18,6 +18,8 @@ import os
 import sys
 import json
 import re
+import unicodedata
+
 
 # ---------------------------------------------------------------------------
 # 상수 / 공통 예외
@@ -283,7 +285,10 @@ def run_user_mode(reader=None):
     print(f"|A-B|: {abs(score_a - score_b):.3e}")
     print(f"연산 시간(평균/{REPEAT}회, A·B 필터 MAC 2회): {avg_ms:.4f} ms")
     decision = print_decision_ab(score_a, score_b)
-    return {"score_a": score_a, "score_b": score_b, "decision": decision}
+
+    rows = [benchmark_pair(MODE1_SIZE, pattern, filter_a, "사용자 입력")]
+    print_perf_table(rows, f"[4] 성능 분석 (3×3, 평균/{REPEAT}회)")
+    return {"score_a": score_a, "score_b": score_b, "decision": decision, "perf": rows}
 
 
 register_mode("1", "사용자 입력 (3x3)", lambda args: run_user_mode())
@@ -504,10 +509,14 @@ def run_json_mode(path):
     section("[2] 패턴 분석 (라벨 정규화 적용)")
     results = analyze_patterns(data.get("patterns"), filters, filter_errors)
 
+    sizes = sorted(set(PERF_SIZES) | set(filters))
+    perf = benchmark(sizes, filters)
+    print_perf_table(perf, f"[3] 성능 분석 (평균/{REPEAT}회)")
+
     summary = summarize(results)
     print_summary(summary)
     return {"filters": filters, "filter_errors": filter_errors,
-            "results": results, "summary": summary}
+            "results": results, "perf": perf, "summary": summary}
 
 register_mode("2", "data.json 분석", lambda args: run_json_mode(args.data))
 
@@ -646,12 +655,75 @@ def run_generator_mode(reader=None):
     section("[2] 생성 패턴 판정 (필터도 생성기로 생성)")
     results = judge_generated(sizes)
 
+    perf = benchmark(sizes)
+    print_perf_table(perf, f"[3] 성능 분석 (평균/{REPEAT}회)")
+
     summary = summarize(results)
     print_summary(summary)
-    return {"sizes": sizes, "results": results, "summary": summary}
+    return {"sizes": sizes, "results": results, "perf": perf, "summary": summary}
 
 
 register_mode("3", "패턴 생성기 (보너스)", lambda args: run_generator_mode())
+
+
+# ---------------------------------------------------------------------------
+# 성능 분석
+# ---------------------------------------------------------------------------
+PERF_SIZES = (3, 5, 13, 25)   # 성능 분석 필수 크기
+
+
+def display_width(text):
+    """한글 등 전각 문자는 2칸으로 센다 (표 정렬용)."""
+    return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in text)
+
+
+def pad(text, width, align="<"):
+    gap = max(0, width - display_width(text))
+    return text + " " * gap if align == "<" else " " * gap + text
+
+
+def benchmark_pair(n, pattern, filt, source, repeat=REPEAT):
+    """한 크기에 대해 MAC 1회 평균 시간을 잰다 (I/O 제외)."""
+    ms_2d = measure_avg_ms(mac, pattern, filt, repeat=repeat)
+    return {"n": n, "ops": n * n, "ms_2d": ms_2d, "source": source}
+
+
+def benchmark(sizes, filters=None, repeat=REPEAT):
+    """크기별로 잰다. data.json 필터가 있으면 그것을, 없으면 생성기 필터를 쓴다."""
+    rows = []
+    for n in sizes:
+        if filters and n in filters:
+            filt, source = filters[n][LABEL_CROSS], "data.json"
+        else:
+            filt, source = generate_cross(n), "생성기"
+        pattern = generate_cross(n)
+        rows.append(benchmark_pair(n, pattern, filt, source, repeat=repeat))
+    return rows
+
+
+def perf_columns():
+    """표의 열: (제목, 정렬, 값 만드는 함수)"""
+    return [
+        ("크기", "<", lambda r: f"{r['n']}×{r['n']}"),
+        ("평균 시간(ms)", ">", lambda r: f"{r['ms_2d']:.4f}"),
+        ("연산 횟수(N²)", ">", lambda r: str(r["ops"])),
+        ("연산당(ns)", ">", lambda r: f"{r['ms_2d'] * 1e6 / r['ops']:.1f}"),
+        ("입력", "<", lambda r: r["source"]),
+    ]
+
+
+def print_perf_table(rows, title):
+    section(title)
+    columns = perf_columns()
+    cells = [[fmt(r) for _, _, fmt in columns] for r in rows]
+    widths = []
+    for i, (header, _, _) in enumerate(columns):
+        widths.append(max([display_width(header)] + [display_width(c[i]) for c in cells]))
+    gap = "   "
+    print(gap.join(pad(h, w, a) for (h, a, _), w in zip(columns, widths)).rstrip())
+    print("-" * (sum(widths) + len(gap) * (len(widths) - 1)))
+    for c in cells:
+        print(gap.join(pad(v, w, a) for v, (_, a, _), w in zip(c, columns, widths)).rstrip())
 
 
 # ===========================================================================
