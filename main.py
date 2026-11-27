@@ -11,6 +11,8 @@ MAC(Multiply-Accumulate) 연산으로 십자가(Cross) / X 패턴을 판별하�
 """
 
 import math
+import gc
+import time
 
 # ---------------------------------------------------------------------------
 # 상수 / 공통 예외
@@ -91,4 +93,61 @@ class Matrix:
         )
 
     def __repr__(self):
-        return f"Matrix({self.size}×{self.size})" 
+        return f"Matrix({self.size}×{self.size})"
+
+
+# ---------------------------------------------------------------------------
+# MAC 연산 · 판정 · 시간 측정
+# ---------------------------------------------------------------------------
+EPSILON = 1e-9         # 동점 판정 허용오차: |a - b| < EPSILON 이면 동점
+EPSILON_TEXT = "1e-9"
+REPEAT = 10            # 성능 측정 반복 횟수 (최소 기준 10회)
+
+
+def mac(pattern, filt):
+    """같은 위치끼리 곱한 값을 모두 누적한다. 곱셈 횟수 = N²."""
+    if pattern.size != filt.size:
+        raise SchemaError(
+            f"크기 불일치: 패턴 {pattern.size}×{pattern.size}, "
+            f"필터 {filt.size}×{filt.size}"
+        )
+    n = pattern.size
+    a = pattern.data
+    b = filt.data
+    total = 0.0
+    for r in range(n):
+        for c in range(n):
+            total += a[r][c] * b[r][c]
+    return total
+
+
+def is_tie(score_a, score_b, eps=EPSILON):
+    return abs(score_a - score_b) < eps
+
+
+def decide(score_a, score_b, label_a, label_b, eps=EPSILON):
+    """점수가 큰 쪽의 라벨을 돌려준다. 차이가 eps 미만이면 UNDECIDED."""
+    if is_tie(score_a, score_b, eps):
+        return UNDECIDED
+    return label_a if score_a > score_b else label_b
+
+
+def measure_avg_ms(func, *args, repeat=REPEAT):
+    """func(*args)를 repeat회 호출한 평균 시간(ms).
+
+    - 첫 호출(워밍업)은 측정에서 뺀다
+    - 측정 중에는 GC를 꺼서(timeit 과 같은 방식) 가비지 컬렉션으로 시간이 튀는 것을 줄인다
+    """
+    func(*args)
+    gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        elapsed = 0.0
+        for _ in range(repeat):
+            start = time.perf_counter()
+            func(*args)
+            elapsed += time.perf_counter() - start
+    finally:
+        if gc_was_enabled:
+            gc.enable()
+    return elapsed / repeat * 1000.0
