@@ -91,4 +91,4 @@ class Matrix:
         )
 
     def __repr__(self):
-        return f"Matrix({self.size}×{self.size})"
+        return f"Matrix({self.size}×{self.size})" 
