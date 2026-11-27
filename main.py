@@ -16,6 +16,8 @@ import time
 import argparse
 import os
 import sys
+import json
+import re
 
 # ---------------------------------------------------------------------------
 # 상수 / 공통 예외
@@ -274,6 +276,226 @@ def run_user_mode(reader=None):
 
 
 register_mode("1", "사용자 입력 (3x3)", lambda args: run_user_mode())
+
+
+# ---------------------------------------------------------------------------
+# 모드 2: data.json 로드 / 스키마 검증 / 판정
+# ---------------------------------------------------------------------------
+FILTER_KEY_RE = re.compile(r"^size_(\d+)$")
+PATTERN_KEY_RE = re.compile(r"^size_(\d+)_(\d+)$")
+
+# 실패 원인 분류 (데이터/스키마 vs 수치 비교 vs 판정 로직)
+CAUSE_SCHEMA = "데이터/스키마"
+CAUSE_NUMERIC = "수치 비교·동점"
+CAUSE_LOGIC = "판정 불일치"
+
+
+class CaseFailure(Exception):
+    """케이스 단위 FAIL. 프로그램을 멈추지 않고 사유와 원인 분류를 남긴다."""
+
+    def __init__(self, cause, message):
+        super().__init__(message)
+        self.cause = cause
+
+
+class CaseResult:
+    def __init__(self, case_id):
+        self.case_id = case_id
+        self.cross_score = None
+        self.x_score = None
+        self.decision = None
+        self.expected = None
+        self.raw_expected = None
+        self.passed = False
+        self.cause = None
+        self.reason = ""
+
+
+def load_json(path):
+    """(data, 오류 메시지)를 돌려준다. 실패해도 예외를 밖으로 던지지 않는다."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f), None
+    except FileNotFoundError:
+        return None, f"파일을 찾을 수 없습니다: {path}"
+    except json.JSONDecodeError as e:
+        return None, f"JSON 문법 오류: {e.msg} (line {e.lineno}, col {e.colno})"
+    except (OSError, UnicodeDecodeError) as e:
+        return None, f"파일을 읽을 수 없습니다: {e}"
+
+
+def parse_filter_entry(n, entry):
+    """size_N 필터 항목 → {Cross: Matrix, X: Matrix}. 필터 키도 라벨 정규화한다."""
+    if not isinstance(entry, dict):
+        raise SchemaError("필터 항목이 객체(dict)가 아닙니다")
+    pair = {}
+    for raw_label, rows in entry.items():
+        label = normalize_label(raw_label)
+        if label is None:
+            raise SchemaError(f"알 수 없는 필터 라벨 {raw_label!r}")
+        if label in pair:
+            raise SchemaError(f"필터 라벨 중복: {raw_label!r} → {label}")
+        try:
+            matrix = Matrix.from_rows(rows)
+        except SchemaError as e:
+            raise SchemaError(f"{label} 필터 형식 오류: {e}") from None
+        if matrix.size != n:
+            raise SchemaError(
+                f"{label} 필터 크기 불일치: 키는 {n}×{n}, 실제 {matrix.size}×{matrix.size}"
+            )
+        pair[label] = matrix
+    missing = [label for label in (LABEL_CROSS, LABEL_X) if label not in pair]
+    if missing:
+        raise SchemaError(f"필터 누락: {', '.join(missing)}")
+    return pair
+
+
+def load_filters(raw):
+    """filters 섹션 → ({N: {Cross, X}}, {키 또는 N: 오류 사유})"""
+    filters, errors = {}, {}
+    if not isinstance(raw, dict):
+        errors["filters"] = "'filters' 항목이 없거나 객체(dict)가 아닙니다"
+        return filters, errors
+    for key, entry in raw.items():
+        match = FILTER_KEY_RE.match(str(key))
+        if not match:
+            errors[key] = f"필터 키 형식 오류 (size_N 형식이어야 함): {key!r}"
+            continue
+        n = int(match.group(1))
+        try:
+            filters[n] = parse_filter_entry(n, entry)
+        except SchemaError as e:
+            errors[n] = str(e)
+    return filters, errors
+
+
+def _evaluate(result, entry, filters, filter_errors):
+    match = PATTERN_KEY_RE.match(str(result.case_id))
+    if not match:
+        raise CaseFailure(CAUSE_SCHEMA, "패턴 키 형식 오류 (size_N_idx 형식이어야 함)")
+    n = int(match.group(1))
+    if not isinstance(entry, dict):
+        raise CaseFailure(CAUSE_SCHEMA, "패턴 항목이 객체(dict)가 아닙니다")
+    result.raw_expected = entry.get("expected")
+    result.expected = normalize_label(result.raw_expected)
+    if "input" not in entry:
+        raise CaseFailure(CAUSE_SCHEMA, "'input' 필드 누락")
+    try:
+        pattern = Matrix.from_rows(entry["input"])
+    except SchemaError as e:
+        raise CaseFailure(CAUSE_SCHEMA, f"input 형식 오류: {e}") from None
+    if pattern.size != n:
+        raise CaseFailure(
+            CAUSE_SCHEMA,
+            f"크기 불일치: 키는 {n}×{n}인데 input은 {pattern.size}×{pattern.size}",
+        )
+    if n not in filters:
+        reason = filter_errors.get(n)
+        message = f"size_{n} 필터 사용 불가: {reason}" if reason else f"size_{n} 필터가 없습니다"
+        raise CaseFailure(CAUSE_SCHEMA, message)
+
+    pair = filters[n]
+    for label, filt in pair.items():
+        if filt.size != pattern.size:
+            raise CaseFailure(
+                CAUSE_SCHEMA,
+                f"필터/패턴 크기 불일치: {label} 필터 {filt.size}×{filt.size}, "
+                f"패턴 {pattern.size}×{pattern.size}",
+            )
+
+    result.cross_score = mac(pattern, pair[LABEL_CROSS])
+    result.x_score = mac(pattern, pair[LABEL_X])
+    result.decision = decide(result.cross_score, result.x_score, LABEL_CROSS, LABEL_X)
+
+    if "expected" not in entry:
+        raise CaseFailure(CAUSE_SCHEMA, "'expected' 필드 누락")
+    if result.expected is None:
+        raise CaseFailure(CAUSE_SCHEMA, f"expected 라벨 해석 불가: {result.raw_expected!r}")
+    if result.decision == UNDECIDED:
+        diff = abs(result.cross_score - result.x_score)
+        raise CaseFailure(
+            CAUSE_NUMERIC,
+            f"동점(UNDECIDED) 처리 규칙에 따라 FAIL (|Cross-X|={diff:.2e} < {EPSILON_TEXT})",
+        )
+    if result.decision != result.expected:
+        raise CaseFailure(CAUSE_LOGIC, f"판정 {result.decision} ≠ expected {result.expected}")
+    result.passed = True
+
+
+def evaluate_case(case_id, entry, filters, filter_errors):
+    """패턴 1건을 평가한다. 어떤 오류가 나도 CaseResult(FAIL)로 돌려준다."""
+    result = CaseResult(case_id)
+    try:
+        _evaluate(result, entry, filters, filter_errors)
+    except CaseFailure as e:
+        result.cause, result.reason = e.cause, str(e)
+    except Exception as e:  # 마지막 안전망: 프로그램이 비정상 종료되지 않도록
+        result.cause = CAUSE_SCHEMA
+        result.reason = f"예기치 못한 오류: {type(e).__name__}: {e}"
+    return result
+
+
+def print_case(result):
+    print(f"--- {result.case_id} ---")
+    if result.cross_score is None:
+        print("Cross 점수: 계산 불가")
+        print("X 점수: 계산 불가")
+    else:
+        print(f"Cross 점수: {format_score(result.cross_score)}")
+        print(f"X 점수: {format_score(result.x_score)}")
+    decision = result.decision or "-"
+    if result.expected:
+        expected = result.expected
+    elif result.raw_expected is not None:
+        expected = f"{result.raw_expected!r}(해석 불가)"
+    else:
+        expected = "-"
+    status = "PASS" if result.passed else f"FAIL [{result.cause}]"
+    print(f"판정: {decision} | expected: {expected} | {status}")
+    if not result.passed:
+        print(f"  사유: {result.reason}")
+
+
+def print_filter_status(filters, filter_errors):
+    for n in sorted(filters):
+        print(f"✓ size_{n:<3} 필터 로드 완료 ({', '.join(filters[n])})")
+    for key, reason in filter_errors.items():
+        name = f"size_{key}" if isinstance(key, int) else str(key)
+        print(f"✗ {name:<8} 필터 로드 실패: {reason}")
+
+
+def analyze_patterns(patterns, filters, filter_errors):
+    results = []
+    if not isinstance(patterns, dict):
+        print("✗ 'patterns' 항목이 없거나 객체(dict)가 아닙니다.")
+        return results
+    for case_id, entry in patterns.items():
+        result = evaluate_case(case_id, entry, filters, filter_errors)
+        print_case(result)
+        results.append(result)
+    return results
+
+
+def run_json_mode(path):
+    section("[1] 필터 로드")
+    data, error = load_json(path)
+    if error:
+        print(f"✗ {error}")
+        print("  data.json 위치를 확인한 뒤 다시 실행하세요. (--data 옵션으로 경로 지정 가능)")
+        return None
+    if not isinstance(data, dict):
+        print("✗ 최상위 구조가 객체(dict)가 아닙니다.")
+        return None
+
+    filters, filter_errors = load_filters(data.get("filters"))
+    print_filter_status(filters, filter_errors)
+
+    section("[2] 패턴 분석 (라벨 정규화 적용)")
+    results = analyze_patterns(data.get("patterns"), filters, filter_errors)
+    return {"filters": filters, "filter_errors": filter_errors, "results": results}
+
+
+register_mode("2", "data.json 분석", lambda args: run_json_mode(args.data))
 
 
 # ===========================================================================
