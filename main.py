@@ -151,3 +151,21 @@ def measure_avg_ms(func, *args, repeat=REPEAT):
         if gc_was_enabled:
             gc.enable()
     return elapsed / repeat * 1000.0
+
+# ---------------------------------------------------------------------------
+# 라벨 정규화 (표준 라벨: Cross, X)
+# ---------------------------------------------------------------------------
+# data.json 은 expected 에 '+' / 'x', 필터 키에 'cross' / 'x' 를 쓴다.
+# 내부 비교와 출력은 모두 표준 라벨(Cross/X)로 통일한다.
+LABEL_ALIASES = {
+    "+": LABEL_CROSS,
+    "cross": LABEL_CROSS,
+    "x": LABEL_X,
+}
+
+
+def normalize_label(raw):
+    """여러 표기를 표준 라벨로 바꾼다. 해석할 수 없으면 None."""
+    if not isinstance(raw, str):
+        return None
+    return LABEL_ALIASES.get(raw.strip().lower())
