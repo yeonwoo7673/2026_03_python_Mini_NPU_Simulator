@@ -683,9 +683,17 @@ def pad(text, width, align="<"):
 
 
 def benchmark_pair(n, pattern, filt, source, repeat=REPEAT):
-    """한 크기에 대해 MAC 1회 평균 시간을 잰다 (I/O 제외)."""
+    """한 크기에 대해 MAC 1회 평균 시간을 잰다 (I/O 제외).
+
+    [보너스] 같은 입력·같은 반복 횟수로 1차원(flat) 버전도 재서 비교한다.
+    1차원 변환은 '가중치를 미리 메모리에 펼쳐 두는' 전처리로 보고 측정에서 뺀다.
+    """
     ms_2d = measure_avg_ms(mac, pattern, filt, repeat=repeat)
-    return {"n": n, "ops": n * n, "ms_2d": ms_2d, "source": source}
+    flat_p, flat_f = to_flat(pattern), to_flat(filt)
+    ms_flat = measure_avg_ms(mac_flat, flat_p, flat_f, repeat=repeat)
+    same = mac(pattern, filt) == mac_flat(flat_p, flat_f)
+    return {"n": n, "ops": n * n, "ms_2d": ms_2d, "ms_flat": ms_flat,
+            "same": same, "source": source}
 
 
 def benchmark(sizes, filters=None, repeat=REPEAT):
@@ -702,12 +710,15 @@ def benchmark(sizes, filters=None, repeat=REPEAT):
 
 
 def perf_columns():
-    """표의 열: (제목, 정렬, 값 만드는 함수)"""
+    """표의 열: (제목, 정렬, 값 만드는 함수). 평균 시간 = 2D mac(), 1D 최적화 = mac_flat()"""
     return [
         ("크기", "<", lambda r: f"{r['n']}×{r['n']}"),
         ("평균 시간(ms)", ">", lambda r: f"{r['ms_2d']:.4f}"),
         ("연산 횟수(N²)", ">", lambda r: str(r["ops"])),
         ("연산당(ns)", ">", lambda r: f"{r['ms_2d'] * 1e6 / r['ops']:.1f}"),
+        ("1D 최적화(ms)", ">", lambda r: f"{r['ms_flat']:.4f}"),
+        ("향상(배)", ">", lambda r: f"{r['ms_2d'] / r['ms_flat']:.2f}" if r["ms_flat"] else "-"),
+        ("결과 일치", "<", lambda r: "✓" if r["same"] else "✗"),
         ("입력", "<", lambda r: r["source"]),
     ]
 
@@ -724,6 +735,31 @@ def print_perf_table(rows, title):
     print("-" * (sum(widths) + len(gap) * (len(widths) - 1)))
     for c in cells:
         print(gap.join(pad(v, w, a) for v, (_, a, _), w in zip(c, columns, widths)).rstrip())
+
+
+# ---------------------------------------------------------------------------
+# [보너스] 1차원(flat) 배열 최적화
+# ---------------------------------------------------------------------------
+def to_flat(matrix):
+    """행 우선(row-major) 순서의 1차원 리스트(길이 N²)로 바꾼다."""
+    flat = []
+    for row in matrix.data:
+        for value in row:
+            flat.append(value)
+    return flat
+
+
+def mac_flat(flat_a, flat_b):
+    """1차원 배열 MAC. 인덱스 계산이 i 하나로 단순해진다.
+
+    행 우선 순서로 펼쳤기 때문에 누적 순서가 mac()과 같아 결과도 비트 단위로 같다.
+    """
+    if len(flat_a) != len(flat_b):
+        raise SchemaError(f"길이 불일치: {len(flat_a)} vs {len(flat_b)}")
+    total = 0.0
+    for i in range(len(flat_a)):
+        total += flat_a[i] * flat_b[i]
+    return total
 
 
 # ===========================================================================
