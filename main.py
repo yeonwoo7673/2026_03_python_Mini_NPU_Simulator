@@ -492,10 +492,41 @@ def run_json_mode(path):
 
     section("[2] 패턴 분석 (라벨 정규화 적용)")
     results = analyze_patterns(data.get("patterns"), filters, filter_errors)
-    return {"filters": filters, "filter_errors": filter_errors, "results": results}
 
+    summary = summarize(results)
+    print_summary(summary)
+    return {"filters": filters, "filter_errors": filter_errors,
+            "results": results, "summary": summary}
 
 register_mode("2", "data.json 분석", lambda args: run_json_mode(args.data))
+
+
+# ---------------------------------------------------------------------------
+# 결과 요약 리포트
+# ---------------------------------------------------------------------------
+def summarize(results):
+    failed = [r for r in results if not r.passed]
+    return {"total": len(results), "passed": len(results) - len(failed),
+            "failed": len(failed), "failed_cases": failed}
+
+
+def print_summary(summary):
+    section("[4] 결과 요약")
+    print(f"총 테스트: {summary['total']}개")
+    print(f"통과: {summary['passed']}개")
+    print(f"실패: {summary['failed']}개")
+    if summary["failed_cases"]:
+        print()
+        print("실패 케이스:")
+        for r in summary["failed_cases"]:
+            print(f"- {r.case_id} [{r.cause}]: {r.reason}")
+        counts = {}
+        for r in summary["failed_cases"]:
+            counts[r.cause] = counts.get(r.cause, 0) + 1
+        print()
+        print("원인 분류: " + ", ".join(f"{k} {v}건" for k, v in counts.items()))
+    print()
+    print('(상세 원인 분석 및 복잡도 설명은 README.md의 "결과 리포트" 섹션 참고)')
 
 
 # ===========================================================================
