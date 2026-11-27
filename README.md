@@ -228,6 +228,7 @@ data.json의 FAIL 3건은 필터 가중치 불균형으로 생긴 진짜 동점�
 
 ## 7-1. user@4F-73:~/2026_03_python_Mini_NPU_Simulator$ python3 -m unittest discover -s tests -v
 ```bash
+user@4F-73:~/2026_03_python_Mini_NPU_Simulator$ python3 -m unittest discover -s tests -v
 test_filters_loaded_with_standard_labels (test_main.DataJsonTest.test_filters_loaded_with_standard_labels) ... ok
 test_naive_comparison_would_pick_wrong_label (test_main.DataJsonTest.test_naive_comparison_would_pick_wrong_label) ... ok
 test_pass_cases (test_main.DataJsonTest.test_pass_cases) ... ok
