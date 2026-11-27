@@ -13,6 +13,9 @@ MAC(Multiply-Accumulate) 연산으로 십자가(Cross) / X 패턴을 판별하�
 import math
 import gc
 import time
+import argparse
+import os
+import sys
 
 # ---------------------------------------------------------------------------
 # 상수 / 공통 예외
@@ -169,3 +172,152 @@ def normalize_label(raw):
     if not isinstance(raw, str):
         return None
     return LABEL_ALIASES.get(raw.strip().lower())
+
+
+# ---------------------------------------------------------------------------
+# 공통 출력 도우미 / 모드 등록
+# ---------------------------------------------------------------------------
+LINE = "#" + "-" * 40
+MODES = {}   # 메뉴 번호 -> (이름, 실행 함수)
+
+
+def register_mode(key, name, runner):
+    """메뉴에 모드를 등록한다. runner 는 명령행 인자(args)를 받는 함수."""
+    MODES[key] = (name, runner)
+
+
+def section(title):
+    print()
+    print(LINE)
+    print(f"# {title}")
+    print(LINE)
+
+
+def format_score(score):
+    """점수를 repr 그대로 출력해 부동소수점 오차가 눈에 보이게 한다."""
+    return repr(score)
+
+
+# ---------------------------------------------------------------------------
+# 모드 1: 사용자 입력 (3×3)
+# ---------------------------------------------------------------------------
+MODE1_SIZE = 3
+FORMAT_ERROR = "입력 형식 오류: 각 줄에 {n}개의 숫자를 공백으로 구분해 입력하세요."
+
+
+def parse_row(line, n):
+    """한 줄 문자열을 숫자 n개로 파싱한다. 실패하면 SchemaError."""
+    tokens = line.split()
+    if not tokens:
+        raise SchemaError("빈 줄이 입력되었습니다 (행 누락)")
+    if len(tokens) != n:
+        raise SchemaError(f"열 개수 불일치: {len(tokens)}개 입력됨")
+    values = []
+    for token in tokens:
+        try:
+            number = float(token)
+        except ValueError:
+            raise SchemaError(f"숫자 파싱 실패: {token!r}") from None
+        values.append(to_number(number))
+    return values
+
+
+def read_matrix(title, n=MODE1_SIZE, reader=None):
+    """n줄을 한 줄씩 입력받아 Matrix로 저장한다. 잘못된 줄은 그 줄만 다시 입력받는다."""
+    reader = reader or input   # 호출할 때 input 을 찾아야 테스트에서 바꿔 끼울 수 있다
+    print(f"{title} ({n}줄 입력, 공백 구분)")
+    rows = []
+    while len(rows) < n:
+        line = reader()
+        try:
+            rows.append(parse_row(line, n))
+        except SchemaError as e:
+            print(f"  {FORMAT_ERROR.format(n=n)} ({e})")
+            print(f"  → {len(rows) + 1}번째 줄을 다시 입력하세요.")
+    return Matrix.from_rows(rows)
+
+
+def print_decision_ab(score_a, score_b):
+    decision = decide(score_a, score_b, "A", "B")
+    if decision == UNDECIDED:
+        print(f"판정: 판정 불가 (|A-B| < {EPSILON_TEXT})")
+    else:
+        print(f"판정: {decision}")
+    return decision
+
+
+def run_user_mode(reader=None):
+    section("[1] 필터 입력")
+    filter_a = read_matrix("필터 A", reader=reader)
+    print()
+    filter_b = read_matrix("필터 B", reader=reader)
+    print()
+    print("✓ 필터 저장 완료")
+    print("필터 A:")
+    print(filter_a.format())
+    print("필터 B:")
+    print(filter_b.format())
+
+    section("[2] 패턴 입력")
+    pattern = read_matrix("패턴", reader=reader)
+
+    section("[3] MAC 결과")
+    score_a = mac(pattern, filter_a)
+    score_b = mac(pattern, filter_b)
+    avg_ms = measure_avg_ms(lambda: (mac(pattern, filter_a), mac(pattern, filter_b)))
+    print(f"A 점수: {format_score(score_a)}")
+    print(f"B 점수: {format_score(score_b)}")
+    print(f"|A-B|: {abs(score_a - score_b):.3e}")
+    print(f"연산 시간(평균/{REPEAT}회, A·B 필터 MAC 2회): {avg_ms:.4f} ms")
+    decision = print_decision_ab(score_a, score_b)
+    return {"score_a": score_a, "score_b": score_b, "decision": decision}
+
+
+register_mode("1", "사용자 입력 (3x3)", lambda args: run_user_mode())
+
+
+# ===========================================================================
+# 실행 흐름 — 이 구역은 항상 파일 맨 아래에 둔다 (새 코드는 이 구분선 '위'에 추가)
+# ===========================================================================
+DEFAULT_DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
+
+
+def choose_mode(reader=None):
+    reader = reader or input
+    print()
+    print("[모드 선택]")
+    for key in sorted(MODES):
+        print(f"{key}. {MODES[key][0]}")
+    while True:
+        print("선택: ", end="", flush=True)
+        choice = reader().strip()
+        if choice in MODES:
+            return choice
+        print(f"  잘못된 선택입니다. {', '.join(sorted(MODES))} 중에서 입력하세요.")
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Mini NPU Simulator")
+    parser.add_argument("--mode", choices=sorted(MODES), help="모드 바로 실행 (메뉴 생략)")
+    parser.add_argument("--data", default=DEFAULT_DATA_PATH, help="data.json 경로")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    if hasattr(sys.stdout, "reconfigure"):
+        # 콘솔 인코딩이 ✓, × 같은 문자를 지원하지 않아도 비정상 종료하지 않도록
+        sys.stdout.reconfigure(errors="replace")
+    args = parse_args(argv)
+    print("=== Mini NPU Simulator ===")
+    try:
+        mode = args.mode or choose_mode()
+        _, runner = MODES[mode]
+        runner(args)
+    except (EOFError, KeyboardInterrupt):
+        print("\n입력이 종료되어 프로그램을 마칩니다.")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
