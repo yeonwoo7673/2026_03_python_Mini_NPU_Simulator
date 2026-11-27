@@ -225,3 +225,283 @@ data.json의 FAIL 3건은 필터 가중치 불균형으로 생긴 진짜 동점�
 | 11 | fix | 측정 중 GC 비활성화, expected 표시 개선 |
 | 12 | test | 의도적 오류 데이터 + unittest 37개 |
 | 13 | docs | README 결과 리포트 |
+
+## 7-1. user@4F-73:~/2026_03_python_Mini_NPU_Simulator$ python3 -m unittest discover -s tests -v
+```bash
+test_filters_loaded_with_standard_labels (test_main.DataJsonTest.test_filters_loaded_with_standard_labels) ... ok
+test_naive_comparison_would_pick_wrong_label (test_main.DataJsonTest.test_naive_comparison_would_pick_wrong_label) ... ok
+test_pass_cases (test_main.DataJsonTest.test_pass_cases) ... ok
+test_perf_covers_required_sizes (test_main.DataJsonTest.test_perf_covers_required_sizes) ... ok
+test_summary (test_main.DataJsonTest.test_summary) ... ok
+test_tie_cases_fail_as_undecided (test_main.DataJsonTest.test_tie_cases_fail_as_undecided) ... ok
+test_epsilon_boundary (test_main.DecideTest.test_epsilon_boundary) ... ok
+test_float_error_is_tie (test_main.DecideTest.test_float_error_is_tie) ... ok
+test_normal (test_main.DecideTest.test_normal) ... ok
+test_every_case_classified (test_main.ErrorCasesTest.test_every_case_classified) ... ok
+test_filter_errors_recorded (test_main.ErrorCasesTest.test_filter_errors_recorded) ... ok
+test_summary (test_main.ErrorCasesTest.test_summary) ... ok
+test_cross_and_x_3 (test_main.GeneratorTest.test_cross_and_x_3) ... ok
+test_invalid_sizes (test_main.GeneratorTest.test_invalid_sizes) ... ok
+test_mode3 (test_main.GeneratorTest.test_mode3) ... ok
+test_scores_for_any_n (test_main.GeneratorTest.test_scores_for_any_n) ... ok
+test_normalize (test_main.LabelTest.test_normalize) ... ok
+test_unknown (test_main.LabelTest.test_unknown) ... ok
+test_broken_json_does_not_crash (test_main.LoadJsonTest.test_broken_json_does_not_crash) ... ok
+test_missing_file (test_main.LoadJsonTest.test_missing_file) ... ok
+test_missing_sections (test_main.LoadJsonTest.test_missing_sections) ... ok
+test_flat_equals_2d_on_data_json (test_main.MacTest.test_flat_equals_2d_on_data_json) ... ok
+test_measure_returns_positive_ms (test_main.MacTest.test_measure_returns_positive_ms) ... ok
+test_mission_examples (test_main.MacTest.test_mission_examples) ... ok
+test_size_mismatch_raises (test_main.MacTest.test_size_mismatch_raises) ... ok
+test_main_mode2_returns_zero (test_main.MainTest.test_main_mode2_returns_zero) ... ok
+test_from_rows_rejects_bad_shapes_and_values (test_main.MatrixTest.test_from_rows_rejects_bad_shapes_and_values) ... ok
+test_get_set (test_main.MatrixTest.test_get_set) ... ok
+test_out_of_range (test_main.MatrixTest.test_out_of_range) ... ok
+test_supports_required_sizes (test_main.MatrixTest.test_supports_required_sizes) ... ok
+test_to_flat_is_row_major (test_main.MatrixTest.test_to_flat_is_row_major) ... ok
+test_bad_lines_are_reprompted (test_main.UserModeTest.test_bad_lines_are_reprompted) ... ok
+test_eof_exits_cleanly (test_main.UserModeTest.test_eof_exits_cleanly) ... ok
+test_example_input (test_main.UserModeTest.test_example_input) ... ok
+test_generator_shortcut (test_main.UserModeTest.test_generator_shortcut) ... ok
+test_menu_rejects_invalid_choice (test_main.UserModeTest.test_menu_rejects_invalid_choice) ... ok
+test_tie_is_undecided (test_main.UserModeTest.test_tie_is_undecided) ... ok
+
+----------------------------------------------------------------------
+Ran 37 tests in 0.041s
+
+OK
+```
+![unittest](/docs/screenshots/01.unittest.png)
+
+## 7-2. user@4F-73:~/2026_03_python_Mini_NPU_Simulator$ python3 main.py --mode 1
+```bash
+user@4F-73:~/2026_03_python_Mini_NPU_Simulator$ python3 main.py --mode 1 <<'EOF'
+0 1
+0 1 0
+1 1 1
+0 a 0
+0 1 0
+
+1 0 1
+0 1 0
+1 0 1
+1 0 1
+0 1 0
+1 0 1
+EOF
+=== Mini NPU Simulator ===
+
+#----------------------------------------
+# [1] 필터 입력
+#----------------------------------------
+필터 A (3줄 입력, 공백 구분 | 첫 줄에 cross 또는 x 입력 시 자동 생성)
+  입력 형식 오류: 각 줄에 3개의 숫자를 공백으로 구분해 입력하세요. (열 개수 불일치: 2개 입력됨)
+  → 1번째 줄을 다시 입력하세요.
+  입력 형식 오류: 각 줄에 3개의 숫자를 공백으로 구분해 입력하세요. (숫자 파싱 실패: 'a')
+  → 3번째 줄을 다시 입력하세요.
+
+필터 B (3줄 입력, 공백 구분 | 첫 줄에 cross 또는 x 입력 시 자동 생성)
+  입력 형식 오류: 각 줄에 3개의 숫자를 공백으로 구분해 입력하세요. (빈 줄이 입력되었습니다 (행 누락))
+  → 1번째 줄을 다시 입력하세요.
+
+✓ 필터 저장 완료
+필터 A:
+  0 1 0
+  1 1 1
+  0 1 0
+필터 B:
+  1 0 1
+  0 1 0
+  1 0 1
+
+#----------------------------------------
+# [2] 패턴 입력
+#----------------------------------------
+패턴 (3줄 입력, 공백 구분 | 첫 줄에 cross 또는 x 입력 시 자동 생성)
+
+#----------------------------------------
+# [3] MAC 결과
+#----------------------------------------
+A 점수: 1.0
+B 점수: 5.0
+|A-B|: 4.000e+00
+연산 시간(평균/10회, A·B 필터 MAC 2회): 0.0020 ms
+판정: B
+
+#----------------------------------------
+# [4] 성능 분석 (3×3, 평균/10회)
+#----------------------------------------
+크기   평균 시간(ms)   연산 횟수(N²)   연산당(ns)   1D 최적화(ms)   향상(배)   결과 일치   입력
+------------------------------------------------------------------------------------------------------
+3×3           0.0011               9        118.4          0.0008       1.39   ✓           사용자 입력
+```
+
+![mode 1](/docs/screenshots/02-1.mode_1.png)
+![mode 1](/docs/screenshots/02-2.mode_1.png)
+
+## 7-3. user@4F-73:~/2026_03_python_Mini_NPU_Simulator$ python3 main.py --mode 2
+```bash
+user@4F-73:~/2026_03_python_Mini_NPU_Simulator$ python3 main.py --mode 2
+=== Mini NPU Simulator ===
+
+#----------------------------------------
+# [1] 필터 로드
+#----------------------------------------
+✓ size_5   필터 로드 완료 (Cross, X)
+✓ size_13  필터 로드 완료 (Cross, X)
+✓ size_25  필터 로드 완료 (Cross, X)
+
+#----------------------------------------
+# [2] 패턴 분석 (라벨 정규화 적용)
+#----------------------------------------
+--- size_5_1 ---
+Cross 점수: 0.9
+X 점수: 0.8999999999999999
+판정: UNDECIDED | expected: X | FAIL [수치 비교·동점]
+  사유: 동점(UNDECIDED) 처리 규칙에 따라 FAIL (|Cross-X|=1.11e-16 < 1e-9)
+--- size_5_2 ---
+Cross 점수: 8.9
+X 점수: 0.1
+판정: Cross | expected: Cross | PASS
+--- size_13_1 ---
+Cross 점수: 0.3
+X 점수: 14.700000000000008
+판정: X | expected: X | PASS
+--- size_13_2 ---
+Cross 점수: 7.499999999999997
+X 점수: 7.5
+판정: UNDECIDED | expected: Cross | FAIL [수치 비교·동점]
+  사유: 동점(UNDECIDED) 처리 규칙에 따라 FAIL (|Cross-X|=2.66e-15 < 1e-9)
+--- size_25_1 ---
+Cross 점수: 4.9
+X 점수: 4.899999999999999
+판정: UNDECIDED | expected: X | FAIL [수치 비교·동점]
+  사유: 동점(UNDECIDED) 처리 규칙에 따라 FAIL (|Cross-X|=1.78e-15 < 1e-9)
+--- size_25_2 ---
+Cross 점수: 52.9
+X 점수: 0.1
+판정: Cross | expected: Cross | PASS
+
+#----------------------------------------
+# [3] 성능 분석 (평균/10회)
+#----------------------------------------
+크기    평균 시간(ms)   연산 횟수(N²)   연산당(ns)   1D 최적화(ms)   향상(배)   결과 일치   입력
+-----------------------------------------------------------------------------------------------------
+3×3            0.0008               9         85.0          0.0005       1.50   ✓           생성기
+5×5            0.0013              25         52.9          0.0009       1.50   ✓           data.json
+13×13          0.0082             169         48.4          0.0058       1.42   ✓           data.json
+25×25          0.0254             625         40.6          0.0210       1.21   ✓           data.json
+
+#----------------------------------------
+# [4] 결과 요약
+#----------------------------------------
+총 테스트: 6개
+통과: 3개
+실패: 3개
+
+실패 케이스:
+- size_5_1 [수치 비교·동점]: 동점(UNDECIDED) 처리 규칙에 따라 FAIL (|Cross-X|=1.11e-16 < 1e-9)
+- size_13_2 [수치 비교·동점]: 동점(UNDECIDED) 처리 규칙에 따라 FAIL (|Cross-X|=2.66e-15 < 1e-9)
+- size_25_1 [수치 비교·동점]: 동점(UNDECIDED) 처리 규칙에 따라 FAIL (|Cross-X|=1.78e-15 < 1e-9)
+
+원인 분류: 수치 비교·동점 3건
+
+(상세 원인 분석 및 복잡도 설명은 README.md의 "결과 리포트" 섹션 참고)
+```
+
+![mode 2](/docs/screenshots/03-1.mode_2.png)
+![mode 2](/docs/screenshots/03-2.mode_2.png)
+
+## 7-3. user@4F-73:~/2026_03_python_Mini_NPU_Simulator$ python3 main.py --mode 3
+```bash
+user@4F-73:~/2026_03_python_Mini_NPU_Simulator$ python3 main.py --mode 3
+=== Mini NPU Simulator ===
+
+#----------------------------------------
+# [1] 크기 입력
+#----------------------------------------
+생성할 크기 N 입력 (3 이상 홀수, 여러 개는 공백 구분, 엔터 = 3 5 13 25)
+N: 3 7 15 27
+
+#----------------------------------------
+# [2] 생성 패턴 판정 (필터도 생성기로 생성)
+#----------------------------------------
+3×3 Cross 패턴:
+  0 1 0
+  1 1 1
+  0 1 0
+--- gen_3_Cross ---
+Cross 점수: 5.0
+X 점수: 1.0
+판정: Cross | expected: Cross | PASS
+3×3 X 패턴:
+  1 0 1
+  0 1 0
+  1 0 1
+--- gen_3_X ---
+Cross 점수: 1.0
+X 점수: 5.0
+판정: X | expected: X | PASS
+7×7 Cross 패턴:
+  0 0 0 1 0 0 0
+  0 0 0 1 0 0 0
+  0 0 0 1 0 0 0
+  1 1 1 1 1 1 1
+  0 0 0 1 0 0 0
+  0 0 0 1 0 0 0
+  0 0 0 1 0 0 0
+--- gen_7_Cross ---
+Cross 점수: 13.0
+X 점수: 1.0
+판정: Cross | expected: Cross | PASS
+7×7 X 패턴:
+  1 0 0 0 0 0 1
+  0 1 0 0 0 1 0
+  0 0 1 0 1 0 0
+  0 0 0 1 0 0 0
+  0 0 1 0 1 0 0
+  0 1 0 0 0 1 0
+  1 0 0 0 0 0 1
+--- gen_7_X ---
+Cross 점수: 1.0
+X 점수: 13.0
+판정: X | expected: X | PASS
+--- gen_15_Cross ---
+Cross 점수: 29.0
+X 점수: 1.0
+판정: Cross | expected: Cross | PASS
+--- gen_15_X ---
+Cross 점수: 1.0
+X 점수: 29.0
+판정: X | expected: X | PASS
+--- gen_27_Cross ---
+Cross 점수: 53.0
+X 점수: 1.0
+판정: Cross | expected: Cross | PASS
+--- gen_27_X ---
+Cross 점수: 1.0
+X 점수: 53.0
+판정: X | expected: X | PASS
+
+#----------------------------------------
+# [3] 성능 분석 (평균/10회)
+#----------------------------------------
+크기    평균 시간(ms)   연산 횟수(N²)   연산당(ns)   1D 최적화(ms)   향상(배)   결과 일치   입력
+--------------------------------------------------------------------------------------------------
+3×3            0.0010               9        116.3          0.0008       1.29   ✓           생성기
+7×7            0.0031              49         63.2          0.0015       2.09   ✓           생성기
+15×15          0.0107             225         47.6          0.0059       1.82   ✓           생성기
+27×27          0.0307             729         42.1          0.0209       1.47   ✓           생성기
+
+#----------------------------------------
+# [4] 결과 요약
+#----------------------------------------
+총 테스트: 8개
+통과: 8개
+실패: 0개
+
+(상세 원인 분석 및 복잡도 설명은 README.md의 "결과 리포트" 섹션 참고)
+```
+
+![mode 3](/docs/screenshots/04-1.mode_3.png)
+![mode 3](/docs/screenshots/04-2.mode_3.png)
