@@ -94,6 +94,10 @@ class Matrix:
         self._check_index(r, c)
         self.data[r][c] = to_number(value, where=f"({r + 1}행 {c + 1}열)")
 
+    def to_flat(self):
+        """행 우선(row-major) 순서로 펼친 1차원 리스트를 돌려준다."""
+        return [value for row in self.data for value in row]
+
     def format(self, indent="  "):
         return "\n".join(
             indent + " ".join(format_number(v) for v in row) for row in self.data
