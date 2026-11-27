@@ -224,13 +224,24 @@ def parse_row(line, n):
     return values
 
 
-def read_matrix(title, n=MODE1_SIZE, reader=None):
-    """n줄을 한 줄씩 입력받아 Matrix로 저장한다. 잘못된 줄은 그 줄만 다시 입력받는다."""
+def read_matrix(title, n=MODE1_SIZE, reader=None, allow_generate=True):
+    """n줄을 한 줄씩 입력받아 Matrix로 저장한다. 잘못된 줄은 그 줄만 다시 입력받는다.
+
+    [보너스] 첫 줄에 'cross'/'+' 또는 'x'를 입력하면 생성기로 자동 생성한다.
+    """
     reader = reader or input   # 호출할 때 input 을 찾아야 테스트에서 바꿔 끼울 수 있다
-    print(f"{title} ({n}줄 입력, 공백 구분)")
+    hint = " | 첫 줄에 cross 또는 x 입력 시 자동 생성" if allow_generate else ""
+    print(f"{title} ({n}줄 입력, 공백 구분{hint})")
     rows = []
     while len(rows) < n:
         line = reader()
+        if allow_generate and not rows:
+            label = normalize_label(line)
+            if label is not None:
+                matrix = generate_pattern(label, n)
+                print(f"  → 생성기로 {n}×{n} {label} 패턴 생성")
+                print(matrix.format("    "))
+                return matrix
         try:
             rows.append(parse_row(line, n))
         except SchemaError as e:
@@ -527,6 +538,120 @@ def print_summary(summary):
         print("원인 분류: " + ", ".join(f"{k} {v}건" for k, v in counts.items()))
     print()
     print('(상세 원인 분석 및 복잡도 설명은 README.md의 "결과 리포트" 섹션 참고)')
+
+
+# ---------------------------------------------------------------------------
+# [보너스] 패턴 생성기 + 모드 3
+# ---------------------------------------------------------------------------
+GENERATOR_MAX_N = 301
+DEFAULT_GENERATOR_SIZES = (3, 5, 13, 25)
+PRINT_MATRIX_MAX_N = 7
+
+
+def validate_generator_size(n):
+    if isinstance(n, bool) or not isinstance(n, int):
+        raise SchemaError(f"크기는 정수여야 합니다: {n!r}")
+    if n < 3 or n % 2 == 0:
+        raise SchemaError(f"크기는 3 이상의 홀수여야 합니다 (중심선이 1줄이어야 함): {n}")
+    if n > GENERATOR_MAX_N:
+        raise SchemaError(f"크기는 {GENERATOR_MAX_N} 이하여야 합니다: {n}")
+
+
+def generate_cross(n):
+    """가운데 행과 가운데 열이 1인 N×N 십자가."""
+    validate_generator_size(n)
+    m = Matrix(n)
+    center = n // 2
+    for i in range(n):
+        m.set(center, i, 1.0)
+        m.set(i, center, 1.0)
+    return m
+
+
+def generate_x(n):
+    """두 대각선이 1인 N×N X."""
+    validate_generator_size(n)
+    m = Matrix(n)
+    for i in range(n):
+        m.set(i, i, 1.0)
+        m.set(i, n - 1 - i, 1.0)
+    return m
+
+
+def generate_pattern(label, n):
+    label = normalize_label(label) or label
+    if label == LABEL_CROSS:
+        return generate_cross(n)
+    if label == LABEL_X:
+        return generate_x(n)
+    raise SchemaError(f"생성할 수 없는 라벨: {label!r}")
+
+
+def parse_sizes(line):
+    tokens = line.replace(",", " ").split()
+    if not tokens:
+        return list(DEFAULT_GENERATOR_SIZES)
+    sizes = []
+    for token in tokens:
+        try:
+            n = int(token)
+        except ValueError:
+            raise SchemaError(f"정수가 아닌 값: {token!r}") from None
+        validate_generator_size(n)
+        if n not in sizes:
+            sizes.append(n)
+    return sizes
+
+
+def read_sizes(reader=None):
+    reader = reader or input
+    default = " ".join(str(n) for n in DEFAULT_GENERATOR_SIZES)
+    print(f"생성할 크기 N 입력 (3 이상 홀수, 여러 개는 공백 구분, 엔터 = {default})")
+    while True:
+        print("N: ", end="", flush=True)
+        try:
+            return parse_sizes(reader())
+        except SchemaError as e:
+            print(f"  입력 형식 오류: {e}. 다시 입력하세요.")
+
+
+def judge_generated(sizes):
+    """생성기로 만든 Cross/X 필터에 생성 패턴을 넣어 판정한다."""
+    results = []
+    for n in sizes:
+        pair = {LABEL_CROSS: generate_cross(n), LABEL_X: generate_x(n)}
+        for label in (LABEL_CROSS, LABEL_X):
+            pattern = generate_pattern(label, n)
+            result = CaseResult(f"gen_{n}_{label}")
+            result.expected = label
+            result.cross_score = mac(pattern, pair[LABEL_CROSS])
+            result.x_score = mac(pattern, pair[LABEL_X])
+            result.decision = decide(result.cross_score, result.x_score, LABEL_CROSS, LABEL_X)
+            result.passed = result.decision == label
+            if not result.passed:
+                result.cause = CAUSE_NUMERIC if result.decision == UNDECIDED else CAUSE_LOGIC
+                result.reason = f"판정 {result.decision} ≠ expected {label}"
+            if n <= PRINT_MATRIX_MAX_N:
+                print(f"{n}×{n} {label} 패턴:")
+                print(pattern.format())
+            print_case(result)
+            results.append(result)
+    return results
+
+
+def run_generator_mode(reader=None):
+    section("[1] 크기 입력")
+    sizes = read_sizes(reader)
+
+    section("[2] 생성 패턴 판정 (필터도 생성기로 생성)")
+    results = judge_generated(sizes)
+
+    summary = summarize(results)
+    print_summary(summary)
+    return {"sizes": sizes, "results": results, "summary": summary}
+
+
+register_mode("3", "패턴 생성기 (보너스)", lambda args: run_generator_mode())
 
 
 # ===========================================================================
